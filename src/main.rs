@@ -51,10 +51,63 @@ impl Player {
     }
 }
 
+struct Obstacle {
+    x: i32,
+    gap_y: i32,
+    size: i32
+}
+
+impl Obstacle {
+    fn new(x: i32, score: i32) -> Self {
+        let mut random = RandomNumberGenerator::new();
+        Obstacle {
+            x,
+            gap_y: random.range(10, 40),
+            size: i32::max(2, 20 - score)
+        }
+    }
+
+    fn render(&mut self, ctx: &mut BTerm, player: &Player) {
+        let screen_x = self.x - player.x;
+        let half_size = self.size / 2;
+
+        for y in 0..(self.gap_y - half_size) {
+            ctx.set(
+                screen_x,
+                y,
+                RED,
+                BLACK,
+                to_cp437('/')
+            );
+        };
+
+        for y in (self.gap_y + half_size)..SCREEN_HEIGHT {
+            ctx.set(
+                screen_x,
+                y,
+                RED,
+                BLACK,
+                to_cp437('/')
+            );
+        }
+    }
+
+    fn hit_obstacle(&mut self, player: &Player) -> bool {
+        let half_size = self.size / 2;
+        let does_x_match = self.x == player.x;
+        let player_hit_top = player.y < (self.gap_y - half_size);
+        let player_hit_bottom = player.y > (self.gap_y + half_size);
+
+        does_x_match && (player_hit_top || player_hit_bottom)
+    }
+}
+
 struct State {
     mode: GameMode,
     frame_time: f32,
-    player: Player
+    player: Player,
+    obstacle: Obstacle,
+    score: i32
 }
 
 impl State {
@@ -63,6 +116,8 @@ impl State {
             mode: GameMode::Menu,
             player: Player::new(5, 25),
             frame_time: 0.0,
+            obstacle: Obstacle::new(SCREEN_WIDTH, 0),
+            score: 0
         }
     }
 
@@ -77,8 +132,15 @@ impl State {
             self.player.flap();
         }
         self.player.render(ctx);
+        self.obstacle.render(ctx, &self.player);
         ctx.print(0, 0, "Press SPACE to flap");
-        if self.player.y > SCREEN_HEIGHT {
+        ctx.print(0, 1, &format!("Score: {}", self.score));
+
+        if self.player.x > self.obstacle.x {
+            self.score += 1;
+            self.obstacle = Obstacle::new(SCREEN_WIDTH + self.player.x, self.score);
+        }
+        if self.player.y > SCREEN_HEIGHT || self.obstacle.hit_obstacle(&self.player) {
             self.mode = GameMode::End;
         }
     }
@@ -101,6 +163,7 @@ impl State {
         ctx.cls_bg(BLACK);
         ctx.cls();
         ctx.print_centered(5, "You are dead!");
+        ctx.print_centered(6, &format!("Final score: {}", self.score));
         ctx.print_centered(8, "(P) Play Again");
         ctx.print_centered(9, "(Q) Quit Game ");
         if let Some(key) = ctx.key {
