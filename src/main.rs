@@ -16,37 +16,46 @@ enum GameMode {
 
 struct Player {
     x: i32,
-    y: i32,
-    velocity: f32
+    y: f32,
+    velocity: f32,
+    spin: Radians,
+    scale: PointF
 }
 
 impl Player {
-    fn new(x: i32, y: i32) -> Self {
+    fn new(x: i32, y: f32) -> Self {
         Player {
             x,
             y,
             velocity: 0.0,
+            spin: Radians::new(0.0),
+            scale: PointF { x: 1.0, y: 1.0},
         }
     }
 
     fn render(&mut self, ctx: &mut BTerm) {
-        ctx.set(
-            0,
-            self.y,
+        ctx.set_active_console(1);
+        ctx.cls();
+        ctx.set_fancy(
+            PointF { x: 0.0, y: self.y},
+            1,
+            self.spin,
+            self.scale,
             YELLOW,
             BLACK,
             to_cp437('@')
         );
+        ctx.set_active_console(0);
     }
 
     fn gravity_and_move(&mut self) {
         if self.velocity <= MAX_GRAVITY {
             self.velocity += GRAVITY
         }
-        self.y += self.velocity as i32;
+        self.y += self.velocity;
         self.x += HORIZONTAL_VELOCITY as i32;
-        if self.y < 0 {
-            self.y = 0
+        if self.y < 0.0 {
+            self.y = 0.0
         };
     }
 
@@ -99,8 +108,8 @@ impl Obstacle {
     fn hit_obstacle(&mut self, player: &Player) -> bool {
         let half_size = self.size / 2;
         let does_x_match = self.x == player.x;
-        let player_hit_top = player.y < (self.gap_y - half_size);
-        let player_hit_bottom = player.y > (self.gap_y + half_size);
+        let player_hit_top = (player.y as i32) < (self.gap_y - half_size);
+        let player_hit_bottom = (player.y as i32) > (self.gap_y + half_size);
 
         does_x_match && (player_hit_top || player_hit_bottom)
     }
@@ -118,7 +127,7 @@ impl State {
     fn new() -> Self {
         State {
             mode: GameMode::Menu,
-            player: Player::new(5, 25),
+            player: Player::new(5, 25.0),
             frame_time: 0.0,
             obstacle: Obstacle::new(SCREEN_WIDTH, 0),
             score: 0
@@ -144,7 +153,7 @@ impl State {
             self.score += 1;
             self.obstacle = Obstacle::new(SCREEN_WIDTH + self.player.x, self.score);
         }
-        if self.player.y > SCREEN_HEIGHT || self.obstacle.hit_obstacle(&self.player) {
+        if self.player.y > SCREEN_HEIGHT as f32 || self.obstacle.hit_obstacle(&self.player) {
             self.mode = GameMode::End;
         }
     }
@@ -164,8 +173,8 @@ impl State {
     }
 
     fn dead(&mut self, ctx: &mut BTerm) {
-        ctx.cls_bg(BLACK);
         ctx.cls();
+        ctx.cls_bg(BLACK);
         ctx.print_centered(5, "You are dead!");
         ctx.print_centered(6, &format!("Final score: {}", self.score));
         ctx.print_centered(8, "(P) Play Again");
@@ -180,7 +189,7 @@ impl State {
     }
 
     fn restart(&mut self) {
-        self.player = Player::new(5, 25);
+        self.player = Player::new(5, 25.0);
         self.frame_time = 0.0;
         self.mode = GameMode::Playing;
     }
@@ -198,7 +207,9 @@ impl GameState for State {
 
 fn main() -> BError {
     let context = BTermBuilder::simple80x50()
+        .with_fancy_console(80, 50, "terminal8x8.png")
         .with_title("Flappy Rust")
+        .with_vsync(false)
         .build()?;
     main_loop(context, State::new())
 }
