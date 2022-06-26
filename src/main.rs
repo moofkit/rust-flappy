@@ -1,12 +1,16 @@
+#![warn(clippy::pedantic)]
+
 use bracket_lib::prelude::*;
 
-const SCREEN_WIDTH : i32 = 80;
-const SCREEN_HEIGHT : i32 = 50;
+const SCREEN_WIDTH : i32 = 40;
+const SCREEN_HEIGHT : i32 = 25;
 const FRAME_DURATION : f32 = 60.0;
 const GRAVITY : f32 = 0.4;
 const MAX_GRAVITY : f32 = 2.0;
 const JUMP_FORCE : f32 = 2.5;
-const HORIZONTAL_VELOCITY : f32 = 1.0;
+const HORIZONTAL_VELOCITY : i32 = 1;
+const PLAYER_FRAMES : [usize; 6] = [ 64, 1, 2, 3, 2, 1 ];
+
 
 enum GameMode {
     Menu,
@@ -19,7 +23,8 @@ struct Player {
     y: f32,
     velocity: f32,
     spin: Radians,
-    scale: PointF
+    scale: PointF,
+    frame: usize
 }
 
 impl Player {
@@ -29,7 +34,8 @@ impl Player {
             y,
             velocity: 0.0,
             spin: Radians::new(0.0),
-            scale: PointF { x: 1.0, y: 1.0},
+            scale: PointF { x: 2.0, y: 2.0},
+            frame: 0
         }
     }
 
@@ -42,25 +48,27 @@ impl Player {
             self.spin,
             self.scale,
             YELLOW,
-            BLACK,
-            to_cp437('@')
+            NAVY,
+            PLAYER_FRAMES[self.frame]
         );
         ctx.set_active_console(0);
     }
 
     fn gravity_and_move(&mut self) {
         if self.velocity <= MAX_GRAVITY {
-            self.velocity += GRAVITY
+            self.velocity += GRAVITY;
         }
         self.y += self.velocity;
-        self.x += HORIZONTAL_VELOCITY as i32;
+        self.x += HORIZONTAL_VELOCITY;
+        self.frame += 1;
+        self.frame = self.frame % PLAYER_FRAMES.len();
         if self.y < 0.0 {
-            self.y = 0.0
+            self.y = 0.0;
         };
     }
 
     fn flap(&mut self) {
-        self.velocity = -JUMP_FORCE
+        self.velocity = -JUMP_FORCE;
     }
 }
 
@@ -75,7 +83,7 @@ impl Obstacle {
         let mut random = RandomNumberGenerator::new();
         Obstacle {
             x,
-            gap_y: random.range(10, 40),
+            gap_y: random.range(10, SCREEN_HEIGHT - 10),
             size: i32::max(2, 20 - score)
         }
     }
@@ -88,9 +96,9 @@ impl Obstacle {
             ctx.set(
                 screen_x,
                 y,
-                RED,
+                GREY,
                 BLACK,
-                to_cp437('/')
+                179
             );
         };
 
@@ -98,9 +106,9 @@ impl Obstacle {
             ctx.set(
                 screen_x,
                 y,
-                RED,
+                GREY,
                 BLACK,
-                to_cp437('/')
+                179
             );
         }
     }
@@ -127,7 +135,7 @@ impl State {
     fn new() -> Self {
         State {
             mode: GameMode::Menu,
-            player: Player::new(5, 25.0),
+            player: Player::new(5, (SCREEN_HEIGHT / 2) as f32),
             frame_time: 0.0,
             obstacle: Obstacle::new(SCREEN_WIDTH, 0),
             score: 0
@@ -149,20 +157,24 @@ impl State {
         ctx.print(0, 0, "Press SPACE to flap");
         ctx.print(0, 1, &format!("Score: {}", self.score));
 
+        for floor_x in 0..SCREEN_WIDTH {
+            ctx.set(floor_x, SCREEN_HEIGHT - 1, GREY, NAVY, 35);
+        };
+
         if self.player.x > self.obstacle.x {
             self.score += 1;
             self.obstacle = Obstacle::new(SCREEN_WIDTH + self.player.x, self.score);
         }
-        if self.player.y > SCREEN_HEIGHT as f32 || self.obstacle.hit_obstacle(&self.player) {
+        if self.player.y as i32 > SCREEN_HEIGHT || self.obstacle.hit_obstacle(&self.player) {
             self.mode = GameMode::End;
         }
     }
 
     fn main_menu(&mut self, ctx: &mut BTerm) {
         ctx.cls();
-        ctx.print_centered(5, "Welcome to Flappy Rust");
-        ctx.print_centered(8, "(P) Play Game");
-        ctx.print_centered(9, "(Q) Quit Game");
+        ctx.print_color_centered(5, CYAN, BLACK, "Welcome to Flappy Rust");
+        ctx.print_color_centered(8, GREEN, BLACK, "(P) Play Game");
+        ctx.print_color_centered(9, GREEN, BLACK, "(Q) Quit Game");
         if let Some(key) = ctx.key {
             match key {
                 VirtualKeyCode::P => self.restart(),
@@ -174,11 +186,10 @@ impl State {
 
     fn dead(&mut self, ctx: &mut BTerm) {
         ctx.cls();
-        ctx.cls_bg(BLACK);
-        ctx.print_centered(5, "You are dead!");
-        ctx.print_centered(6, &format!("Final score: {}", self.score));
-        ctx.print_centered(8, "(P) Play Again");
-        ctx.print_centered(9, "(Q) Quit Game ");
+        ctx.print_color_centered(5, RED, BLACK, "You are dead!");
+        ctx.print_color_centered(6, GREEN, BLACK, &format!("Final score: {}", self.score));
+        ctx.print_color_centered(8, GREEN, BLACK, "(P) Play Again");
+        ctx.print_color_centered(9, GREEN, BLACK, "(Q) Quit Game ");
         if let Some(key) = ctx.key {
             match key {
                 VirtualKeyCode::P => self.restart(),
@@ -189,7 +200,7 @@ impl State {
     }
 
     fn restart(&mut self) {
-        self.player = Player::new(5, 25.0);
+        self.player = Player::new(5, (SCREEN_HEIGHT / 2) as f32);
         self.frame_time = 0.0;
         self.mode = GameMode::Playing;
     }
@@ -206,10 +217,13 @@ impl GameState for State {
 }
 
 fn main() -> BError {
-    let context = BTermBuilder::simple80x50()
-        .with_fancy_console(80, 50, "terminal8x8.png")
+    let context = BTermBuilder::new()
+        .with_font("../resources/flappy32.png", 32, 32)
         .with_title("Flappy Rust")
+        .with_tile_dimensions(16, 16)
         .with_vsync(false)
+        .with_simple_console(SCREEN_WIDTH, SCREEN_HEIGHT, "../resources/flappy32.png")
+        .with_fancy_console(SCREEN_WIDTH, SCREEN_HEIGHT, "../resources/flappy32.png")
         .build()?;
     main_loop(context, State::new())
 }
